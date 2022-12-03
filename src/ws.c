@@ -38,7 +38,7 @@ void init_ws(char *host, char *port, char *receiver_host, char *receiver_port) {
 
   l("Socket inicializado com sucesso!\n");
 
-  printf("{UDP, Host IP: %s, Host port: %u, Receiver IP: %s, Receiver port: %u\n",
+  printf("{UDP, IP do HOST: %s, Rodando na porta: %u, Endereco ip do receptor: %s, na porta: %u\n",
     inet_ntoa(host_data.sin_addr),
     ntohs(host_data.sin_port),
     inet_ntoa(receiver_data.sin_addr),
