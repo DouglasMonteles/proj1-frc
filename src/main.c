@@ -46,7 +46,7 @@ void menu_options(char *file_name, char goal) {
 
   while (is_app_running) {
     char file_name[100];
-    
+
     switch (mode) {
       case 0: // MENU
       
@@ -141,17 +141,24 @@ void receive_file(char* file_name) {
   file = fopen(file_name, "w");
 
   int len = 0;
+  int bytes_received = 0;
   char data_msg_in_bytes[MSG_MAX_PIECES];
 
   while (TRUE) {
     get_data_from_dll(data_msg_in_bytes, &len);
-    int msg_size = *((int*) data_msg_in_bytes);
+    
+    int useful_msg_len = *((int *)data_msg_in_bytes);
+    if (useful_msg_len == 0)
+        break;
 
-    if (msg_size <= 0) break;
+    bytes_received += useful_msg_len;
 
-    // copy data in the file
-    for (int i = MSG_HEADER; i < (MSG_HEADER + msg_size); i++)
+    for (int i = MSG_HEADER; i < MSG_HEADER + useful_msg_len; i++) {
       fputc(data_msg_in_bytes[i], file);
+    }
+    
+    if (bytes_received % 100 == 0)
+      printf("\t\t\033[0;34mDownload:\033[0m %dB\n", bytes_received);
   } 
 
   fclose(file);
