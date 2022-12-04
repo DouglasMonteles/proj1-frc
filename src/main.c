@@ -94,7 +94,7 @@ void receive_file(char* file_name) {
   char data_msg_in_bytes[MSG_MAX_PIECES];
 
   while (TRUE) {
-    obtain_msg_from_dll(data_msg_in_bytes, &len);
+    get_data_from_dll(data_msg_in_bytes, &len);
     int msg_size = *((int*) data_msg_in_bytes);
 
     if (msg_size <= 0) break;
@@ -124,7 +124,7 @@ int main(int argc, char **argv) {
     // Prepare to send files
     case 1:
     case 2:
-      init_I_dll();
+      init_I_dll(TIMEOUT_1000K);
       char goal = argv[1][0]; // SENDER = 's' or RECEIVER = 'r'
       char file_name[100];
 
@@ -138,9 +138,8 @@ int main(int argc, char **argv) {
 
     // Prepare to observer the send and receive files
     default:
-      init_dll(argv[5][0] == 'S' ? SENDER : RECEIVER, argv[1], argv[2], argv[3], argv[4]);
-      run_dll();
-      destroy_dll();
+      init_dll(argv[2], argv[3], argv[4], 112, 1);
+      set_verbose_dll(1);
   }
 
   return 0;

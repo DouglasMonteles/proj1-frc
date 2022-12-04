@@ -15,7 +15,13 @@
 
 #define SENDER 0
 #define RECEIVER 1
-
 #define NO_PRIORITY 0
+
+#define SOCKET_TIMEOUT 8
+#define TIMEOUT 5
+#define TIMEOUT_100K 100000L
+#define TIMEOUT_1000K 100000000L
+
+#define BUFFER_SIZE MSG_MAX_PIECES
 
 void l(char *msg);

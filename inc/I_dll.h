@@ -1,7 +1,10 @@
-void init_I_dll();
+void init_I_dll(long timeout_value);
 void send_msg_to_dll(char* msg, int size);
 void obtain_msg_from_dll(char* msg, int* size);
 void destroy_I_dll();
 void obtain_msg_from_dll(char *msg, int * size);
 void send_msg_to_instance(char *msg, int size);
 void obtain_msg_from_instance(char *msg, int *size);
+int get_timed_data_from_dll(char *msg, int *size);
+int obtain_timed_msg_from_instance(char *msg, int *size);
+void get_data_from_dll(char *data, int *data_len);

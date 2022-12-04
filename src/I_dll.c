@@ -1,13 +1,23 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include <mqueue.h>
-#include <string.h>
+#include <fcntl.h>
 #include <sys/stat.h>
+#include <time.h>
+#include <mqueue.h>
+#include <errno.h>
+#include <string.h>
+#include <signal.h>
+#include <sys/types.h>
+#include <sys/time.h>
 
 #include "main_definitions.h"
 
 mqd_t send_queue;
 mqd_t receive_queue;
+mqd_t sending_session_token_queue;
+
+pid_t dll_pid;
+struct timespec timeout1;
 
 struct mq_attr send_queue_props;
 struct mq_attr receive_queue_props;
@@ -15,7 +25,7 @@ struct mq_attr receive_queue_props;
 char* send_queue_name = "/send_queue_name";
 char* receive_queue_name = "/receive_queue_name";
 
-void init_I_dll() {
+void init_I_dll(long timeout_value) {
   send_queue_props.mq_maxmsg = MSG_MAX_AMOUNT;
   send_queue_props.mq_msgsize = MSG_MAX_PIECES;
 
@@ -45,6 +55,9 @@ void init_I_dll() {
     printf("Não foi possivel criar a fila de recebimento\n");
     exit(1);
   }
+
+  timeout1.tv_sec = 0;
+  timeout1.tv_nsec = timeout_value;
 }
 
 void destroy_I_dll() {
@@ -61,16 +74,21 @@ void send_msg_to_dll(char *msg, int size) {
   }
 }
 
-void obtain_msg_from_dll(char *msg, int * size) {
+void get_data_from_dll(char *data, int *data_len) {
   int priority;
-  int bytes_received = mq_receive(send_queue,msg, MSG_MAX_PIECES, &priority);
+  int bytes_received = mq_receive(send_queue, data, MSG_MAX_PIECES, &priority);
+}
+
+int obtain_timed_msg_from_dll(char *msg, int * size) {
+  int priority;
+  int bytes_received = mq_timedreceive(send_queue,msg, MSG_MAX_PIECES, &priority, &timeout1);
 
   if (bytes_received < 0) {
     printf("Nao foi possivel receber a mensagem do dll\n");
     exit(1);
   }
 
-  *size = bytes_received;
+  return 0;
 }
 
 void send_msg_to_instance(char *msg, int size) {
@@ -79,7 +97,7 @@ void send_msg_to_instance(char *msg, int size) {
   }
 }
 
-void obtain_msg_from_instance(char *msg, int *size) {
+int obtain_timed_msg_from_instance(char *msg, int *size) {
   int priority;
   int bytes_received = mq_receive(receive_queue, msg, MSG_MAX_PIECES, &priority);
   if (bytes_received < 0) {
@@ -87,5 +105,10 @@ void obtain_msg_from_instance(char *msg, int *size) {
     exit(1);
   }
 
-  *size = bytes_received;
+  return 0;
+}
+
+void obtain_msg_from_instance(char *msg, int *size) {
+  int priority;
+  int bytes_received = mq_receive(receive_queue, msg, MSG_MAX_PIECES, &priority);
 }
