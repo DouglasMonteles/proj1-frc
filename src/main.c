@@ -1,201 +1,261 @@
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-
-#include "main_definitions.h"
 #include "dll.h"
 #include "I_dll.h"
-#include "ws.h"
+#include <stdio.h>
+#include <string.h>
+#include <stdlib.h>
 
-bool is_app_running = 1;
-int mode;
+#include <stdio.h>
+#include <stdlib.h>
+#include <errno.h>
+#include <string.h>
+#include <sys/time.h>
 
-void call_witch_process(char goal, char* file_name);
+static int mode;
+static char cmd[250];
+static int app_running = 1;
 
-bool read_yes_or_no_answer() {
-  char resp;
-  printf("Deseja informar o nome de outro arquivo para enviar? [s/n]\n");
-  scanf(" %c", &resp);
 
-  return resp == 's' ? YES : NO;
+#define MENU 0
+#define SEND_FILE 1
+#define RECEIVE_FILE 2
+
+
+void run_app();
+
+static void display_app_header();
+
+static void display_menu();
+static void process_menu();
+
+static void display_send_file();
+static void process_send_file();
+
+static void display_receive_file();
+static void process_receive_file();
+
+/*
+Recebe o caminho do arquivo, quebra este arquivo em múltiplas chunks
+e os envia para a camada N-1
+*/
+static int process_file(char *file_path);
+
+/*
+Recebe o nome do arquivo e monta os pacotes, presentes na fila, de tamanho
+chunk_size em um arquivo com esse nome
+*/
+static void mount_file();
+
+void display_app_header()
+{
+    system("tput reset");
+    printf("------------------------- \033[0;32mgamaTorrent\033[0m -----------------------------------\n");
+    printf("\t\tCompartilhe seus arquivos com qualquer um sem que a policia federal bata na sua porta!\n\n");
 }
 
-void menu_options(char *file_name, char goal) {
-  int opc;
+void display_menu()
+{
+    printf("\t\t\t- Para enviar arquivos, digite 1\n");
+    printf("\t\t\t- Para receber arquivos, digite 2\n");
+    printf("\t\t\t- Para sair, digite 3\n");
+}
 
-  printf("------ MENU DE OPCOES ----\n");
-  printf("[1] - Enviar arquivos\n");
-  printf("[2] - Receber arquivos\n");
-  printf("[3] - Finalizar programa\n");
-  printf("------ -------------- ----\n");
+void process_menu()
+{
+    scanf(" %s", cmd);
+    if (cmd[0] == '1')
+        mode = SEND_FILE;
+    else if (cmd[0] == '2')
+        mode = RECEIVE_FILE;
+    else if (cmd[0] == '3')
+        app_running = 0;
+}
 
-  scanf("%d", &opc);
+void display_send_file()
+{
+    printf("\t\tPasta atual:\n");
+    system("ls");
+    printf("\n\n\t\tDigite o caminho do arquivo a ser enviado: ");
+}
 
-  switch (opc) {
-    case 1:
-      mode = 1; // SEND FILE
-    break;
-    
-    case 2:
-      mode = 2; //RECEIVER FILE
-    break;
-    default:
-      is_app_running = FALSE;
-      break;
-  }
+void process_send_file()
+{
+    scanf(" %s", cmd);
+    if (process_file(cmd) == 0)
+        printf("\033[0;32mArquivo enviado!\033[0m\n");
+    else
+        printf("\033[0;31mOcorreu um erro durante o envio do arquivo\033[0m\n");
 
-  while (is_app_running) {
-    char file_name[100];
+    printf("\033[0;33mDigite algo para continuar\033[0m.\n");
+    scanf(" %s", cmd);
+    mode = MENU;
+}
 
-    switch (mode) {
-      case 0: // MENU
-      
-      break;
+void display_receive_file()
+{
+    printf("\t\tVocê será notificado assim que alguém estiver lhe enviando um arquivo.\n");
+}
 
-      case 1: // SEND
-        scanf(" %s", file_name);
-        call_witch_process('s', file_name);
-      break;
+void process_receive_file()
+{
+    mount_file();
+    printf("\033[0;32mArquivo recebido!\033[0m\n");
+    printf("\033[0;33mDigite algo para continuar\033[0m.\n");
+    scanf(" %s", cmd);
+    mode = MENU;
+}
 
-      case 2: // RECEIVE
-        scanf(" %s", file_name);
-        call_witch_process('r', file_name);
-      break;
+void run_app()
+{
+    while (app_running) {
+        display_app_header();
+
+        switch (mode) {
+        case MENU:
+            display_menu();
+            process_menu();
+            break;
+
+        case SEND_FILE:
+            display_send_file();
+            process_send_file();
+            break;
+
+        case RECEIVE_FILE:
+            display_receive_file();
+            process_receive_file();
+            break;
+
+        default:
+            break;
+        }
     }
-  }
 }
 
-void l(char *msg) {
-  printf("log: %s\n", msg);
+void show_chunk(char * chunk, int chunk_len)
+{
+    for (int i = 0; i < chunk_len; i++)
+        printf("%c", chunk[i]);
 }
 
-void info_file_size(FILE* file) {
-  int size = 0;
+int process_file(char *file_path)
+{
+    FILE *fp;
+    fp = fopen(file_path, "r");
 
-  fseek(file, 0l, SEEK_END);
-  size = ftell(file);
-  rewind(file);
-
-  printf("Tamanho do arquivo: %d bytes\n", size);
-}
-
-void show_pieces_of_bytes(char* arr, int length) {
-  for (int i = 0; i < length; i++)
-    printf("%c\n", arr[i]);
-}
-
-void send_file_bytes(FILE* file) {
-  char msg_pieces[MSG_MAX_PIECES]; // Tamanho acordado da mensagem
-
-  l("Estabelecendo conexão para enviar o arquivo...");
-  
-  int bytes = 0;
-  int bytes_sended = 0;
-  long long packs_sended = 0;
-
-  while (bytes = fread((msg_pieces + MSG_HEADER), sizeof(char), MSG_BODY, file)) {
-    *((int *) msg_pieces) = bytes;
-    
-    // Show the pieces of bytes
-    // show_pieces_of_bytes(msg_pieces, MSG_MAX_PIECES);
-
-    send_msg_to_dll(msg_pieces, MSG_MAX_PIECES);
-
-    bytes_sended += bytes;
-    packs_sended++;
-    if (packs_sended % 100 == 0) {
-      printf("Download -> %d de ", bytes_sended);
-      info_file_size(file);
-      printf("\n");
+    if (fp == NULL) {
+        printf("Erro: %s\n", strerror(errno));
+        mode = MENU;
+        return 1;
     }
-  }
 
-  memset(msg_pieces, 0x0, MSG_MAX_PIECES);
-  send_msg_to_dll(msg_pieces, MSG_MAX_PIECES);
+    int file_size = 0;
 
-  l("Arquivo enviado \\(^o^)/");
-}
+    fseek(fp, 0L, SEEK_END);
+    file_size = ftell(fp);
 
-void send_file(char* file_name) {
-  int size;
-  // Read the file
-  FILE *file;
-  file = fopen(file_name, "r");
+    rewind(fp);
 
-  if (file == NULL) {
-    printf("Erro ao ler arquivo!\n");
-    exit(1);
-  }
+    char chunk[CQ_DATA_MAX_LEN];
 
-  // Print file size in bytes
-  info_file_size(file);
+    int bytes_read;
+    int bytes_sent = 0;
+    long long int packages_sent = 0;
 
-  // Sending the file
-  send_file_bytes(file);
+    while (bytes_read = fread(chunk + CQ_HEADER_LEN, sizeof(char), CQ_MESSAGE_LEN, fp)) {
+        *((int *)chunk) = bytes_read;
 
-  fclose(file);
-}
-
-void receive_file(char* file_name) {
-  FILE *file;
-  file = fopen(file_name, "w");
-
-  int len = 0;
-  int bytes_received = 0;
-  char data_msg_in_bytes[MSG_MAX_PIECES];
-
-  while (TRUE) {
-    get_data_from_dll(data_msg_in_bytes, &len);
-    
-    int useful_msg_len = *((int *)data_msg_in_bytes);
-    if (useful_msg_len == 0)
-        break;
-
-    bytes_received += useful_msg_len;
-
-    for (int i = MSG_HEADER; i < MSG_HEADER + useful_msg_len; i++) {
-      fputc(data_msg_in_bytes[i], file);
+        send_data_to_dll(chunk, CQ_DATA_MAX_LEN);
+        bytes_sent += bytes_read;
+        packages_sent++;
+        if (packages_sent % 100 == 0)
+            printf("\t\t\033[0;34mUpload:\033[0m %dB/ %dB\n", bytes_sent, file_size);
     }
-    
-    if (bytes_received % 100 == 0)
-      printf("\t\t\033[0;34mDownload:\033[0m %dB\n", bytes_received);
-  } 
+    memset(chunk, 0x0, CQ_DATA_MAX_LEN);
+    send_data_to_dll(chunk, CQ_DATA_MAX_LEN);
 
-  fclose(file);
+    fclose(fp);
+
+    return 0;
 }
 
-void call_witch_process(char goal, char* file_name) {
-  if (goal == 's') { // SENDER
-    // activate_sender_file_process
-    l("activate_sender_file_process");
-    send_file(file_name);
-  } else { // RECEIVER
-    // activate_receiver_file_process
-    l("activate_receiver_file_process");
-    receive_file(file_name);
-  }
+void mount_file()
+{
+    char filename[255];
+
+    int chunk_len;
+    int bytes_received = 0;
+
+    printf("\t\tDigite o nome do arquivo a ser salvo.\n");
+    scanf(" %s", filename);
+
+    FILE *fp;
+    fp = fopen(filename, "w");
+
+    char chunk_data[CQ_DATA_MAX_LEN];
+
+    while(1) {
+        get_data_from_dll(chunk_data, &chunk_len);
+
+        int useful_msg_len = *((int *)chunk_data);
+        if (useful_msg_len == 0)
+            break;
+
+        bytes_received += useful_msg_len;
+
+        for (int i = CQ_HEADER_LEN; i < CQ_HEADER_LEN + useful_msg_len; i++) {
+            fputc(chunk_data[i], fp);
+        }
+        if (bytes_received % 100 == 0)
+            printf("\t\t\033[0;34mDownload:\033[0m %dB\n", bytes_received);
+    }
+
+    fclose(fp);
 }
 
-int main(int argc, char **argv) {
-  switch (argc) {
-    // Prepare to send files
-    case 1:
-    case 2:
-      init_I_dll(TIMEOUT_1000K);
-      char goal = argv[1][0]; // SENDER = 's' or RECEIVER = 'r'
-      char file_name[100];
+void show_help()
+{
+    printf("\033[0;31mUsage\033[0m:\n\tStart Data Link Layer: \033[0;33mprog dll HOST_PORT RECEIVER_ADDRESS RECEIVER_PORT [options]\033[0m\n");
+    printf("\n\t\tOptions:\n\t\t\t\033[0;35m[-p, --pdu-size] PDU_SIZE\033[0m\t\t\033[0;34m# Set the PDU size to PDU_SIZE (PS: this option is just a hint and might not take effect)\033[0m\n");
+    printf("\t\t\t\033[0;35m[-v, --verbose]\t\t\t\t\033[0;34m# Start DLL in verbose mode\033[0m\n");
+    printf("\n\tStart the Application: \033[0;33mprog app\033[0m\n\n");
+}
 
-      do {
-        menu_options(file_name, goal);
-        
-      } while (read_yes_or_no_answer());
-    break;
+int main(int argc, char ** argv)
+{
+    if (argc == 1) {
+        show_help();
+        return 0;
+    }
+    else if (argc > 1) {
+        if (strcmp(argv[1], "app") == 0) {
+            initialize_dll_interface(NANO_TIMEOUT);
+            run_app();
+            shut_down_dll_interface();
+        }
+        else if (strcmp(argv[1], "dll") == 0 && argc >= 5) {
 
-    // Prepare to observer the send and receive files
-    default:
-      init_dll(argv[2], argv[3], argv[4], 112, 1);
-      set_verbose_dll(1);
-  }
-
-  return 0;
+            int argi = 5;
+            int pdu_size = 100;
+            int verbose = 0;
+            while (argi < argc) {
+                if (strcmp(argv[argi], "-p") == 0 || strcmp(argv[argi], "--pdu-size") == 0) {
+                    if (argc < 7) {
+                        show_help();
+                        return 0;
+                    }
+                    pdu_size = atoi(argv[argi + 1]);
+                    argi += 2;
+                }
+                else if (strcmp(argv[argi], "-v") == 0 || strcmp(argv[argi], "--verbose") == 0) {
+                    verbose = 1;
+                    argi++;
+                }
+            }
+            initialize_dll(argv[2], argv[3], argv[4], pdu_size, verbose);
+        }
+        else {
+            show_help();
+        }
+    }
+    return 0;
 }

@@ -1,276 +1,276 @@
+#include "dll.h"
+#include "ws.h"
+#include "I_dll.h"
+
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
-#include <signal.h>
-#include <sys/types.h>
+#include <errno.h>
 #include <unistd.h>
 
-#include "main_definitions.h"
-#include "I_dll.h"
-#include "dll.h"
-#include "ws.h"
+static int operation_mode;
 
-bool is_ddl_server_running = TRUE;
-bool has_msg_to_send = FALSE;
-bool has_msg_to_receive = FALSE;
-bool is_verbose_enabled = FALSE;
+static const int QUEUE_BUFFER_SIZE = CQ_DATA_MAX_LEN;
+static int queue_buffer_pos = 0;
+static char queue_buffer[CQ_DATA_MAX_LEN];
 
-int layer_state;
-int operation_mode = 0;
+static int pdu_size;
 
-char queue_buffer[MSG_MAX_PIECES];
-char* outcoming_frame_buffer;
-char* incoming_frame_buffer;
+static char * incoming_frame_buffer;
+static long long incoming_frame_id = 0;
 
-long long incoming_frame_id = 0;
-long long outcoming_frame_id = 0;
+static char * outcoming_frame_buffer;
+static long long outcoming_frame_id = 0;
 
-int buffer_index = 0;
-int pdu_size = 0;
+static const char * dll_error_msg_format = "(DLL) \033[0;31mERROR:\033[0m ";
+static const char * dll_warning_msg_format = "(DLL) \033[0;33mWARNING:\033[0m ";
+static const char * dll_success_msg_format = "(DLL) \033[0;32mSUCCESS:\033[0m ";
+static const char * dll_info_msg_format = "(DLL) \033[0;34mINFO:\033[0m ";
 
-// void show_buffer(char *buffer, int buffer_len) {
-//   printf("%d[", buffer_len);
+static int verbose = 0;
+static int dll_is_running = 1;
 
-//   for (int i = 0; i < buffer_len; i++) {
-//     switch (buffer[i]) {
-//       case 0xFF:
-//         printf("1");
-//         break;
-//       case 0x0:
-//         printf("0");
+void initialize_dll(char * host_port, char * receiver_address, char * receiver_port, int t_pdu_size, int t_verbose)
+{
+    initialize_socket(host_port, receiver_address, receiver_port, MICRO_TIMEOUT);
+    initialize_dll_interface(NANO_TIMEOUT);
 
-//       default:
-//         printf("%c", buffer[i]);
-//         break;
-//     }
-//   }
+    pdu_size = CQ_DATA_MAX_LEN + PDU_HEADER_SIZE;
+    for (int i = 2; i < CQ_DATA_MAX_LEN; i++) {
+        if (CQ_DATA_MAX_LEN % i != 0)
+            continue;
 
-//   printf("]\n");
-// }
-
-void init_dll(char *host_port, char *receiver_address, char *receiver_port, int aux_pdu_size, int flag_verbose) {
-  init_ws(host_port, receiver_address, receiver_port, TIMEOUT_100K);
-  init_I_dll(TIMEOUT_1000K);
-
-  pdu_size = MSG_MAX_PIECES + PDU_HEADER;
-  
-  for (int i = 2; i < MSG_MAX_PIECES; i++) {
-    if ((MSG_MAX_PIECES % i) != 0) continue;
-
-    if (abs((i + PDU_HEADER) - aux_pdu_size) < abs((pdu_size + PDU_HEADER) - aux_pdu_size))
-      pdu_size = i + PDU_HEADER;
-  }
-
-  if (MSG_MAX_PIECES % (pdu_size - PDU_HEADER) != 0) {
-    printf("Critical error: queue message size (%d) can't be divided by PDU payload size (%d).\n", MSG_MAX_PIECES, pdu_size - PDU_HEADER);
-    printf("Insert a different PDU size.\n");
-    exit(1);
-  }
-
-  if (pdu_size != aux_pdu_size)
-    printf("PDU size was adjusted to %d to avoid inconsistency problems.\n", pdu_size);
-
-  if ((incoming_frame_buffer = malloc((size_t)pdu_size)) == NULL) {
-    printf("Unable to allocate memory to incoming frame buffer.\n");
-    exit(1);
-  }
-
-  if ((outcoming_frame_buffer = malloc((size_t) pdu_size)) == NULL) {
-    printf("Unable to allocate memory to outcoming frame buffer.\n");
-    exit(1);
-  }
-
-  is_verbose_enabled = flag_verbose;
-  operation_mode = RECEIVER;
-  
-  printf("Data Link Layer initialized as %s successfully with PID %d!\n", operation_mode == SENDER ? "SENDER" : "RECEIVER", getpid());
-
-  run_dll();
-  destroy_dll();
-}
-
-void destroy_dll() {
-  destroy_I_dll();
-  destroy_ws();
-
-  free(incoming_frame_buffer);
-  free(outcoming_frame_buffer);
-}
-
-void run_dll() {
-  while (is_ddl_server_running) {
-    if (operation_mode == SENDER) {
-      if (get_data_from_queue() == TIMEOUT) {
-        operation_mode = RECEIVER;
-        continue;
-      }
-      send_msg();
+        if (abs((i + PDU_HEADER_SIZE) - t_pdu_size) < abs((pdu_size + PDU_HEADER_SIZE) - t_pdu_size))
+            pdu_size = i + PDU_HEADER_SIZE;
     }
 
-    if (operation_mode == RECEIVER) {
-      while (buffer_index < (BUFFER_SIZE - 1)) {
-        int frame_status;
+    if (CQ_DATA_MAX_LEN % (pdu_size - PDU_HEADER_SIZE) != 0) {
+        printf("%sCritical error: queue message size (%d) can't be divided by PDU payload size (%d).\n", dll_error_msg_format, CQ_DATA_MAX_LEN, pdu_size - PDU_HEADER_SIZE);
+        printf("%sInsert a different PDU size.\n", dll_warning_msg_format);
+        exit(1);
+    }
 
-        while (frame_status = receive_frame()) {
-          if (frame_status == SOCKET_TIMEOUT) {
-            operation_mode = SENDER;
-            break;
-          }
+    if (pdu_size != t_pdu_size)
+        printf("%sPDU size was adjusted to %d to avoid inconsistency problems.\n", dll_warning_msg_format, pdu_size);
 
-          printf("Failed to receive frame %lld. Trying again...\n", incoming_frame_id);
+    if ((incoming_frame_buffer = malloc((size_t) pdu_size)) == NULL) {
+        printf("%sUnable to allocate memory to incoming frame buffer.\n", dll_error_msg_format);
+        exit(1);
+    }
+
+    if ((outcoming_frame_buffer = malloc((size_t) pdu_size)) == NULL) {
+        printf("%sUnable to allocate memory to outcoming frame buffer.\n", dll_error_msg_format);
+        exit(1);
+    }
+
+    verbose = t_verbose;
+    operation_mode = RECEIVER;
+    printf("%sData Link Layer initialized as %s successfully with PID %d!\n", dll_success_msg_format, operation_mode == SENDER ? "SENDER" : "RECEIVER", getpid());
+
+    if (verbose)
+        printf("%sInitialized in VERBOSE mode!\n", dll_info_msg_format);
+
+    run_dll();
+    shut_down_dll();
+}
+
+void shut_down_dll()
+{
+    free(incoming_frame_buffer);
+    free(outcoming_frame_buffer);
+
+    shut_down_dll_interface();
+    shut_down_socket();
+}
+
+void run_dll()
+{
+    while (dll_is_running) {
+        if (operation_mode == SENDER) {
+            if (get_data_from_queue() == CQ_TIMEOUT) {
+                // Ninguem enviou nada via fila, checar socket
+                operation_mode = RECEIVER;
+                continue;
+            }
+            send_data();
         }
 
-        if (operation_mode == SENDER) break;
+        if (operation_mode == RECEIVER) {
+            while (queue_buffer_pos < QUEUE_BUFFER_SIZE - 1) {
+                int frame_status;
+                while (frame_status = receive_frame()) {
+                    if (frame_status == SC_TIMEOUT) {
+                        // Ninguem enviou nada no socket, checar fila
+                        operation_mode = SENDER;
+                        break;
+                    }
+                    printf("%sFailed to receive frame %lld. Trying again...\n", dll_error_msg_format, incoming_frame_id);
+                }
 
-        get_frame_from_sender();
-        unpack_message_from_frame_buffer();
-      }
-      
-      buffer_index = 0;
+                if (operation_mode == SENDER)
+                    break;
 
-      if (operation_mode == RECEIVER) 
-        send_data_to_queue();
+                get_frame_from_sender();
+                unpack_message_from_frame_buffer();
+            }
+            queue_buffer_pos = 0;
+
+            if (operation_mode == RECEIVER)
+                send_data_to_queue();
+        }
     }
-  }
 }
 
-void set_verbose_dll(int v) {
-  is_verbose_enabled = v;
+void set_verbose_dll(int value)
+{
+    verbose = value;
 }
 
-void set_operation_mode(int value) {
-  if (value != RECEIVER && value != SENDER) {
-    printf("Attempt to set operation mode with invalid value: %d.\n", value);
-    return;
-  }
+void set_operation_mode(int value)
+{
+    if (value != RECEIVER && value != SENDER) {
+        printf("%sAttempt to set operation mode with invalid value: %d.\n", dll_error_msg_format, value);
+        return;
+    }
 
-  operation_mode = value;
+    operation_mode = value;
 
-  if (is_verbose_enabled)
-    printf("Now operating as %s.\n", operation_mode == RECEIVER ? "RECEIVER" : "SENDER");
+    if (verbose)
+        printf("%sNow operating as %s.\n", dll_info_msg_format, operation_mode == RECEIVER ? "RECEIVER" : "SENDER");
 }
 
-int get_data_from_queue() {
-  int nothing;
-  return obtain_timed_msg_from_instance(queue_buffer, &nothing);
+int get_data_from_queue()
+{
+    int nothing;
+    return get_timed_data_from_app(queue_buffer, &nothing);
 }
 
-void get_frame_from_queue() {
-  int nothing;
-  obtain_msg_from_instance(queue_buffer, &nothing);
-  // show_buffer(queue_buffer, MSG_MAX_PIECES);
+void send_data_to_queue()
+{
+    send_data_to_app(queue_buffer, QUEUE_BUFFER_SIZE);
 }
 
-void send_data_to_queue() {
-  //show_buffer(queue_buffer, MSG_MAX_PIECES);
-  send_msg_to_instance(queue_buffer, BUFFER_SIZE);
+int check_incoming_frame()
+{
+    long long received_id = *((long long *)incoming_frame_buffer);
+    if (received_id != incoming_frame_id) {
+        printf("%sPackage ID differs from expected. Expected: %lld, actual: %lld\n", dll_error_msg_format, incoming_frame_id, received_id);
+        return 1;
+    }
+
+    // TODO implementar CRC ou paridade
+    // ------------
+
+    incoming_frame_id++;
+    return 0;
 }
 
-int check_incoming_frame() {
-  long long received_id = *((long long *)incoming_frame_buffer);
-  if (received_id != incoming_frame_id) {
-    printf("Id os pacotes sao diferentes do esperado! Esperado: %lld, Recebido: %lld\n", incoming_frame_id, received_id);
-    return 1;
-  }
-
-  incoming_frame_id++;
-  return 0;
+int send_error_confirmation_frame()
+{
+    memset(outcoming_frame_buffer, 0xFF, pdu_size);
+    return send_frame();
 }
 
-int send_error_confirmation_frame() {
-  memset(outcoming_frame_buffer, 0xFF, pdu_size);
-  return send_frame();
+int send_ok_confirmation_frame()
+{
+    memset(outcoming_frame_buffer, 0x0, pdu_size);
+    return send_frame();
 }
 
-int send_ok_confirmation_frame() {
-  memset(outcoming_frame_buffer, 0x0, pdu_size);
-  return send_frame();
+void send_data()
+{
+    if (verbose)
+        printf("%sSending data from queue.\n", dll_info_msg_format);
+
+    while (queue_buffer_pos < QUEUE_BUFFER_SIZE - 1) {
+        pack_message_from_queue_buffer();
+        send_frame_to_receiver();
+    }
+    queue_buffer_pos = 0;
+
+    if (verbose)
+        printf("%sData from queue sent successfully.\n\n", dll_info_msg_format);
 }
 
-void send_msg() {
-  if (is_verbose_enabled)
-    printf("Sending data from queue.\n");
+void send_frame_to_receiver()
+{
+    int attempts = 0;
+    while (1) {
+        if (verbose)
+            printf("%sSending frame %lld.\n", dll_info_msg_format, outcoming_frame_id);
 
-  while (buffer_index < BUFFER_SIZE - 1) {
-    pack_message_from_queue_buffer();
-    send_frame_to_receiver();
-  }
+        while (send_frame()) {
+            printf("%sFailed to send frame %lld. Trying again...\n", dll_error_msg_format, outcoming_frame_id);
+        }
 
-  buffer_index = 0;
+        while (get_confirmation_frame() && attempts <= 3) {
+            printf("%sFailed to receive confirmation frame. Trying again...\n", dll_error_msg_format);
+            attempts++;
+        }
+        if (attempts > 3) {
+            printf("%sResending frame due confirmation failure.\n", dll_warning_msg_format);
+            attempts = 0;
+            continue;
+        }
+        if (check_confirmation_frame())
+            continue;
 
-  if (is_verbose_enabled)
-    printf("Data from queue sent successfully.\n\n");
+        break;
+    }
 }
 
-void get_msg() {
-  if (is_verbose_enabled)
-    printf("Receiving message data.\n");
-
-  if (is_verbose_enabled && operation_mode == RECEIVER)
-    printf("Message data received successfully.\n\n");
+int send_frame()
+{
+    return send_data_through_socket(outcoming_frame_buffer, pdu_size);
 }
 
-void send_frame_to_receiver() {
-  do {
-    if (is_verbose_enabled)
-      printf("Sending frame %lld.\n", outcoming_frame_id);
-
-    while (send_frame())
-      printf("Failed to send frame %lld. Trying again...\n", outcoming_frame_id);
-
-    while (get_confirmation_frame())
-      printf("Failed to receive confirmation frame. Trying again...\n");
-  } while (check_confirmation_frame());
+int get_confirmation_frame()
+{
+    receive_frame();
 }
 
-int send_frame() {
-  return send_data_through_socket(outcoming_frame_buffer, pdu_size);
+int check_confirmation_frame()
+{
+    int is_error = 0;
+    for (int i = 0; i < pdu_size; i++) {
+        if (incoming_frame_buffer[i] == 0xFF)
+            is_error = 1;
+    }
+    if (is_error)
+        printf("%sReceived an ERROR confirmation from confirmation frame.\n", dll_warning_msg_format);
+
+    return is_error;
 }
 
-int get_confirmation_frame() {
-  return receive_frame();
+int receive_frame()
+{
+    int result = receive_data_through_socket(incoming_frame_buffer, pdu_size);
+    return result;
 }
 
-int check_confirmation_frame() {
-  int is_error = 0;
-  for (int i = 0; i < pdu_size; i++) {
-    if (incoming_frame_buffer[i] == 0xFF)
-      is_error = 1;
-  }
+void get_frame_from_sender()
+{
+    if (verbose)
+        printf("%sReceiving frame %lld.\n", dll_info_msg_format, incoming_frame_id);
 
-  if (is_error) {
-    printf("Ocorreu um erro no frame\n");
-  }
-  return is_error;
+    if (check_incoming_frame())
+        while (send_error_confirmation_frame())
+            printf("%sFailed to send ERROR confirmation frame. Trying again...\n", dll_error_msg_format);
+
+    else
+        while (send_ok_confirmation_frame())
+            printf("%sFailed to send OK confirmation frame. Trying again...\n", dll_error_msg_format);
 }
 
-int receive_frame() {
-  int result = receive_data_through_socket(incoming_frame_buffer, pdu_size);
-  return result;
+void pack_message_from_queue_buffer()
+{
+    *((long long *) outcoming_frame_buffer) = outcoming_frame_id++;
+    for (int i = 0; i < pdu_size - PDU_HEADER_SIZE; i++)
+        outcoming_frame_buffer[i + PDU_HEADER_SIZE] = queue_buffer[queue_buffer_pos++];
 }
 
-void get_frame_from_sender() {
-  // Caso o frame recebido esteja corrompido, tentar enviar mensage de erro para o par
-  if (is_verbose_enabled)
-    printf("Receiving frame %lld.\n", incoming_frame_id);
-
-  if (check_incoming_frame())
-    while (send_error_confirmation_frame())
-      printf("Failed to send ERROR confirmation frame. Trying again...\n");
-
-  // Caso o frame recebido esteja ok, tentar enviar mensagem de ok para o par
-  else
-    while (send_ok_confirmation_frame())
-      printf("Failed to send OK confirmation frame. Trying again...\n");
-}
-
-void pack_message_from_queue_buffer() {
-  *((long long *)outcoming_frame_buffer) = outcoming_frame_id++;
-  for (int i = 0; i < pdu_size - PDU_HEADER; i++)
-    outcoming_frame_buffer[i + PDU_HEADER] = queue_buffer[buffer_index++];
-}
-
-void unpack_message_from_frame_buffer() {
-  for (int i = 0; i < pdu_size - PDU_HEADER; i++)
-    queue_buffer[buffer_index++] = incoming_frame_buffer[i + PDU_HEADER];
+void unpack_message_from_frame_buffer()
+{
+    for (int i = 0; i < pdu_size - PDU_HEADER_SIZE; i++)
+        queue_buffer[queue_buffer_pos++] = incoming_frame_buffer[i + PDU_HEADER_SIZE];
 }
