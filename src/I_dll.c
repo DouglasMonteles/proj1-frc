@@ -81,7 +81,7 @@ void get_data_from_dll(char *data, int *data_len) {
 
 int obtain_timed_msg_from_dll(char *msg, int * size) {
   int priority;
-  int bytes_received = mq_timedreceive(send_queue,msg, MSG_MAX_PIECES, &priority, &timeout1);
+  int bytes_received = mq_receive(send_queue,msg, MSG_MAX_PIECES, &priority);
 
   if (bytes_received < 0) {
     printf("Nao foi possivel receber a mensagem do dll\n");

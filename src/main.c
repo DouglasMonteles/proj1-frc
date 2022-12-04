@@ -7,6 +7,11 @@
 #include "I_dll.h"
 #include "ws.h"
 
+bool is_app_running = 1;
+int mode;
+
+void call_witch_process(char goal, char* file_name);
+
 bool read_yes_or_no_answer() {
   char resp;
   printf("Deseja informar o nome de outro arquivo para enviar? [s/n]\n");
@@ -15,14 +20,49 @@ bool read_yes_or_no_answer() {
   return resp == 's' ? YES : NO;
 }
 
-void read_file_name(char *file_name, char goal) {
-  if (goal == 's') { // SENDER
-    printf("Informe o nome do arquivo a ser enviado:\n");
-  } else { // RECEIVER
-    printf("Informe o nome do arquivo a ser recebido:\n");
+void menu_options(char *file_name, char goal) {
+  int opc;
+
+  printf("------ MENU DE OPCOES ----\n");
+  printf("[1] - Enviar arquivos\n");
+  printf("[2] - Receber arquivos\n");
+  printf("[3] - Finalizar programa\n");
+  printf("------ -------------- ----\n");
+
+  scanf("%d", &opc);
+
+  switch (opc) {
+    case 1:
+      mode = 1; // SEND FILE
+    break;
+    
+    case 2:
+      mode = 2; //RECEIVER FILE
+    break;
+    default:
+      is_app_running = FALSE;
+      break;
   }
 
-  scanf(" %s", file_name);
+  while (is_app_running) {
+    char file_name[100];
+    
+    switch (mode) {
+      case 0: // MENU
+      
+      break;
+
+      case 1: // SEND
+        scanf(" %s", file_name);
+        call_witch_process('s', file_name);
+      break;
+
+      case 2: // RECEIVE
+        scanf(" %s", file_name);
+        call_witch_process('r', file_name);
+      break;
+    }
+  }
 }
 
 void l(char *msg) {
@@ -50,6 +90,8 @@ void send_file_bytes(FILE* file) {
   l("Estabelecendo conexão para enviar o arquivo...");
   
   int bytes = 0;
+  int bytes_sended = 0;
+  long long packs_sended = 0;
 
   while (bytes = fread((msg_pieces + MSG_HEADER), sizeof(char), MSG_BODY, file)) {
     *((int *) msg_pieces) = bytes;
@@ -58,6 +100,14 @@ void send_file_bytes(FILE* file) {
     // show_pieces_of_bytes(msg_pieces, MSG_MAX_PIECES);
 
     send_msg_to_dll(msg_pieces, MSG_MAX_PIECES);
+
+    bytes_sended += bytes;
+    packs_sended++;
+    if (packs_sended % 100 == 0) {
+      printf("Download -> %d de ", bytes_sended);
+      info_file_size(file);
+      printf("\n");
+    }
   }
 
   memset(msg_pieces, 0x0, MSG_MAX_PIECES);
@@ -129,10 +179,8 @@ int main(int argc, char **argv) {
       char file_name[100];
 
       do {
-        read_file_name(file_name, goal);
-        printf("%s\n", file_name);
-
-        call_witch_process(goal, file_name);
+        menu_options(file_name, goal);
+        
       } while (read_yes_or_no_answer());
     break;
 
