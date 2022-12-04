@@ -1,28 +1,24 @@
 # Executavel
 BINFOLDER := bin/
-# .h
+# .hpp
 INCFOLDER := inc/
-# .c
+# .cpp
 SRCFOLDER := src/
 # .o
-# OBJFOLDER := obj/
-
+OBJFOLDER := obj/
 CC := gcc
 CFLAGS := -std=c99
 LINKFLAGS := -lrt
 SRCFILES := $(wildcard src/*.c)
 
 all: $(SRCFILES:src/%.c=obj/%.o)
-	$(CC) $(CFLAGS) obj/*.o -o bin/projeto1_frc $(LINKFLAGS)
+	$(CC) $(CFLAGS) obj/*.o -o bin/prog $(LINKFLAGS)
 
 obj/%.o: src/%.c
 	$(CC) $(CFLAGS) -c $< -o $@ -I./inc $(LINKFLAGS)
 
-run-s: bin/projeto1_frc
-	bin/projeto1_frc sender
-
-run-r: bin/projeto1_frc
-	bin/projeto1_frc sender
+run: bin/prog
+	bin/prog
 
 .PHONY: clean
 clean:
