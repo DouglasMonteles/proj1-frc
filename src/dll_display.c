@@ -1,31 +1,26 @@
 #include "definitions.h"
 #include "dll_display.h"
 
+#include <stdio.h>
+#include <stdlib.h>
 #include <fcntl.h>
-#include <sys/stat.h>
 #include <time.h>
 #include <mqueue.h>
 #include <errno.h>
 #include <string.h>
-#include <stdio.h>
-#include <stdlib.h>
 #include <signal.h>
-#include <sys/types.h>
+#include <sys/stat.h>
 #include <sys/time.h>
+#include <sys/types.h>
 
 static mqd_t receiver_queue;
 static mqd_t sender_queue;
-static mqd_t session_token_queue;
 
 static struct mq_attr receiver_queue_props;
 static struct mq_attr sender_queue_props;
-static struct mq_attr sending_session_token_queue_props;
-
-static pid_t dll_pid;
 
 static char* receiver_queue_name = "/receiver_queue";
 static char* sender_queue_name = "/sender_queue";
-static char* session_token_queue_name = "/session_token_queue";
 
 static struct timespec timeout;
 
@@ -41,13 +36,13 @@ void build_queue(struct mq_attr queue_props, mqd_t queue, char *queue_name) {
 	);
 
 	if (queue < 0) {
-		printf("An error occurred at queue creation\n");
-		printf("Error: %s\n", strerror(errno));
+		printf("[Erro]: Problemas na criacao da fila.\n");
+		printf("Erro: %s\n", strerror(errno));
 		exit(1);
 	}
 }
 
-void initialize_dll_interface(long v_timeout) {
+void init_ddl_display_process(long v_timeout) {
 	// build_queue(receiver_queue_props, receiver_queue, receiver_queue_name);
 	// build_queue(sender_queue_props, sender_queue, sender_queue_name);
 	receiver_queue_props.mq_maxmsg = MSG_MAX_AMOUNT;
@@ -61,8 +56,8 @@ void initialize_dll_interface(long v_timeout) {
 	);
 
 	if (receiver_queue < 0) {
-		printf("An error occurred at receiver_queue creation\n");
-		printf("Error: %s\n", strerror(errno));
+		printf("[Erro]: Problemas na criacao da fila.\n");
+		printf("Erro: %s\n", strerror(errno));
 		exit(1);
 	}
 
@@ -77,8 +72,8 @@ void initialize_dll_interface(long v_timeout) {
 	);
 
 	if (sender_queue < 0) {
-		printf("An error occurred at sender_queue creation\n");
-		printf("Error: %s\n", strerror(errno));
+		printf("[Erro]: Problemas na criacao da fila.\n");
+		printf("Erro: %s\n", strerror(errno));
 		exit(1);
 	}
 
@@ -86,57 +81,58 @@ void initialize_dll_interface(long v_timeout) {
 	timeout.tv_nsec = v_timeout;
 }
 
-void shut_down_dll_interface() {
+void destroy_dll_display() {
 	mq_close(sender_queue);
 	mq_close(receiver_queue);
+
 	mq_unlink(sender_queue_name);
 	mq_unlink(receiver_queue_name);
 }
 
-void send_data_to_dll(char * data, int data_len) {
-	if (mq_send(sender_queue, data, data_len, 0) < 0) {
-		printf("An error occurred when sending data to dll\n");
-		printf("Error: %s\n", strerror(errno));
+void send_data_msg_to_dll(char* msg, int data_len) {
+	if (mq_send(sender_queue, msg, data_len, 0) < 0) {
+		printf("[Erro]: Problemas ao enviar dados para o DLL.\n");
+		printf("Erro: %s\n", strerror(errno));
 	}
 }
 
-int get_timed_data_from_dll(char * data, int * data_len) {
-    int priority;
-    int bytes_received = mq_timedreceive(receiver_queue, data, MSG_MAX_SIZE, &priority, &timeout);
-    
-		if (bytes_received < 0) {
-			if (errno == ETIMEDOUT)
-				return MSG_TIMEOUT;
-
-			printf("An error occurred when receiving data from dll\n");
-			printf("Error: %s\n", strerror(errno));
-
-			return errno;
-    }
-
-    return 0;
-}
-
-void get_data_from_dll(char * data, int * data_len) {
-	int priority;
-	int bytes_received = mq_receive(receiver_queue, data, MSG_MAX_SIZE, &priority);
-}
-
-void send_data_to_app(char * data, int data_len) {
-	if (mq_send(receiver_queue, data, data_len, 0) < 0) {
-		printf("An error occurred when sending data to app\n");
-		printf("Error: %s\n", strerror(errno));
-	}
-}
-
-int get_timed_data_from_app(char * data, int * data_len) {
-	int priority;
-	int bytes_received = mq_timedreceive(sender_queue, data, MSG_MAX_SIZE, &priority, &timeout);
+int get_timed_data_msg_from_dll(char* msg, int* size) {
+	int msg_n_priority;
+	int bytes_received = mq_timedreceive(receiver_queue, msg, MSG_MAX_SIZE, &msg_n_priority, &timeout);
+	
 	if (bytes_received < 0) {
 		if (errno == ETIMEDOUT)
 			return MSG_TIMEOUT;
 
-		printf("An error occurred when receiving data from app\n");
+		printf("[Erro]: Problemas ao receber dados do DLL.\n");
+		printf("Erro: %s\n", strerror(errno));
+
+		return errno;
+	}
+
+	return 0;
+}
+
+void get_data_msg_from_dll(char* msg, int* size) {
+	int msg_n_priority;
+	int bytes_received = mq_receive(receiver_queue, msg, MSG_MAX_SIZE, &msg_n_priority);
+}
+
+void send_data_msg_to_instance(char* msg, int data_len) {
+	if (mq_send(receiver_queue, msg, data_len, 0) < 0) {
+		printf("[Erro]: Problemas ao enviar dados para a instancia\n");
+		printf("Erro: %s\n", strerror(errno));
+	}
+}
+
+int get_timed_data_msg_from_instance(char* msg, int* size) {
+	int msg_n_priority;
+	int bytes_received = mq_timedreceive(sender_queue, msg, MSG_MAX_SIZE, &msg_n_priority, &timeout);
+	if (bytes_received < 0) {
+		if (errno == ETIMEDOUT)
+			return MSG_TIMEOUT;
+
+		printf("[Erro]: Problemas ao receber dados da instancia\n");
 		printf("Error: %s\n", strerror(errno));
 
 		return errno;
@@ -145,7 +141,7 @@ int get_timed_data_from_app(char * data, int * data_len) {
 	return 0;
 }
 
-void get_data_from_app(char * data, int * data_len) {
-	int priority;
-	int bytes_received = mq_receive(sender_queue, data, MSG_MAX_SIZE, &priority);
+void get_data_msg_from_instance(char* msg, int* size) {
+	int msg_n_priority;
+	int bytes_received = mq_receive(sender_queue, msg, MSG_MAX_SIZE, &msg_n_priority);
 }

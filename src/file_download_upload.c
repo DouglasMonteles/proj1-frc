@@ -110,7 +110,7 @@ int upload_file(char *file_name) {
 	while (bytes_read = fread(msg_data_chunks + MSG_HEADER_SIZE, sizeof(char), MSG_SIZE, file))	{
 		*((int *)msg_data_chunks) = bytes_read;
 
-		send_data_to_dll(msg_data_chunks, MSG_MAX_SIZE);
+		send_data_msg_to_dll(msg_data_chunks, MSG_MAX_SIZE);
 		bytes_sended += bytes_read;
 		packages_sended++;
 		if (packages_sended % 100 == 0)
@@ -118,7 +118,7 @@ int upload_file(char *file_name) {
 	}
 
 	memset(msg_data_chunks, 0x0, MSG_MAX_SIZE);
-	send_data_to_dll(msg_data_chunks, MSG_MAX_SIZE);
+	send_data_msg_to_dll(msg_data_chunks, MSG_MAX_SIZE);
 
 	fclose(file);
 	return 0;
@@ -139,7 +139,7 @@ void download_file() {
 	char msg_chunk_data[MSG_MAX_SIZE];
 
 	while (1)	{
-		get_data_from_dll(msg_chunk_data, &msg_data_chunk_len);
+		get_data_msg_from_dll(msg_chunk_data, &msg_data_chunk_len);
 
 		int useful_msg_len = *((int *)msg_chunk_data);
 		if (useful_msg_len == 0)

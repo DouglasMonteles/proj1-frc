@@ -11,15 +11,20 @@ int main(int argc, char** argv) {
 	switch (argc) {
 		case 1:
 		case 2:
-			initialize_dll_interface(NANO_TIMEOUT);
+			init_ddl_display_process(TIMEOUT_1);
 			init_process();
-			shut_down_dll_interface();
+			destroy_dll_display();
 		break;
 
 		default:
-			int argi = 5;
 			int pdu_size = 100;
 			
+			if (argv[5]) {
+				pdu_size = atoi(argv[5]);
+			}
+
+			printf("Tamanho da PDU informado: %d\n", pdu_size);
+
 			init_dll_process(argv[2], argv[3], argv[4], pdu_size);
 	}
 	

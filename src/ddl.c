@@ -14,16 +14,16 @@ static const int QUEUE_BUFFER_SIZE = MSG_MAX_SIZE;
 static int queue_buffer_index = 0;
 static char queue_buffer[MSG_MAX_SIZE];
 static int pdu_size;
-static char * incoming_frame_buffer;
+static char * data_incoming_frame_buffer;
 static long long incoming_frame_id = 0;
-static char * outcoming_frame_buffer;
-static long long outcoming_frame_id = 0;
+static char * data_outcoming_frame_buffer;
+static long long outcoming_frame_id = 0l;
 static int verbose = 0;
 static int dll_is_running = 1;
 
 void init_dll_process(char* port, char* receiver_host, char* receiver_port, int flag_pdu_size) {
-	init_socket(port, receiver_host, receiver_port, MICRO_TIMEOUT);
-	initialize_dll_interface(NANO_TIMEOUT);
+	init_socket(port, receiver_host, receiver_port, TIMEOUT_2);
+	init_ddl_display_process(TIMEOUT_1);
 
 	pdu_size = (MSG_MAX_SIZE + PDU_HEADER_SIZE);
 	operation_mode = ID_RECEIVER;
@@ -44,12 +44,12 @@ void init_dll_process(char* port, char* receiver_host, char* receiver_port, int 
 	if (pdu_size != flag_pdu_size)
 		printf("[Aviso]: O tamanho da PDU foi ajustado para [%d] para evitar problemas de inconsistencia.\n", pdu_size);
 
-	if ((incoming_frame_buffer = malloc((size_t) pdu_size)) == NULL) {
+	if ((data_incoming_frame_buffer = malloc((size_t) pdu_size)) == NULL) {
 		printf("[Erro]: Nao foi possivel alocar memoria para o buffer.\n");
 		exit(1);
 	}
 
-	if ((outcoming_frame_buffer = malloc((size_t) pdu_size)) == NULL) {
+	if ((data_outcoming_frame_buffer = malloc((size_t) pdu_size)) == NULL) {
 		printf("[Erro]: Nao foi possivel alocar memoria para o buffer.\n");
 		exit(1);
 	}
@@ -61,10 +61,10 @@ void init_dll_process(char* port, char* receiver_host, char* receiver_port, int 
 }
 
 void destroy_dll_process() {
-	free(incoming_frame_buffer);
-	free(outcoming_frame_buffer);
+	free(data_incoming_frame_buffer);
+	free(data_outcoming_frame_buffer);
 
-	shut_down_dll_interface();
+	destroy_dll_display();
 	destroy_socket();
 }
 
@@ -115,15 +115,15 @@ void define_op_mode(int value) {
 
 int get_msg_data_from_queue() {
 	int trash;
-	return get_timed_data_from_app(queue_buffer, &trash);
+	return get_timed_data_msg_from_instance(queue_buffer, &trash);
 }
 
 void send_msg_data_to_queue() {
-	send_data_to_app(queue_buffer, QUEUE_BUFFER_SIZE);
+	send_data_msg_to_instance(queue_buffer, QUEUE_BUFFER_SIZE);
 }
 
 int verify_incoming_frame() {
-	long long received_id = *((long long *)incoming_frame_buffer);
+	long long received_id = *((long long *)data_incoming_frame_buffer);
 	if (received_id != incoming_frame_id) {
 		printf("[Erro]: O Id dos pacotes estao diferentes do esperado. Expectativa: %lld, Realidade: %lld\n", incoming_frame_id, received_id);
 		return 1;
@@ -134,12 +134,12 @@ int verify_incoming_frame() {
 }
 
 int send_status_error_confirmation_frame() {
-	memset(outcoming_frame_buffer, 0xFF, pdu_size);
+	memset(data_outcoming_frame_buffer, 0xFF, pdu_size);
 	return send_frame();
 }
 
 int send_success_confirmation_frame() {
-	memset(outcoming_frame_buffer, 0x0, pdu_size);
+	memset(data_outcoming_frame_buffer, 0x0, pdu_size);
 	return send_frame();
 }
 
@@ -157,7 +157,7 @@ void send_msg_data() {
 }
 
 void send_frame_msg_to_receiver() {
-	int attempts = 0;
+	int num_attempts = 0;
 
 	while (1) {
 		printf("[Info]: Enviando frame %lld.\n", outcoming_frame_id);
@@ -165,14 +165,14 @@ void send_frame_msg_to_receiver() {
 		while (send_frame())
 			printf("[Erro]: Falha ao enviar o frame %lld. Tentando novamente...\n", outcoming_frame_id);
 
-		while (get_info_confirmation_frame() && attempts <= 3) {
-			printf("[Erro]: Falha ao receber a confirmação do frame %lld. Tentando novamente...\n");
-			attempts++;
+		while (get_info_confirmation_frame() && num_attempts <= 3) {
+			printf("[Erro]: Falha ao receber a confirmação do frame. Tentando novamente...\n");
+			num_attempts++;
 		}
 
-		if (attempts > 3) {
+		if (num_attempts > 3) {
 			printf("Re-enviando frame...\n");
-			attempts = 0;
+			num_attempts = 0;
 			continue;
 		}
 
@@ -183,7 +183,7 @@ void send_frame_msg_to_receiver() {
 }
 
 int send_frame() {
-  return send_msg_through_socket(outcoming_frame_buffer, pdu_size);
+  return send_msg_through_socket(data_outcoming_frame_buffer, pdu_size);
 }
 
 int get_info_confirmation_frame() {
@@ -194,7 +194,7 @@ int check_info_confirmation_frame() {
 	int has_error = 0;
 
 	for (int i = 0; i < pdu_size; i++) {
-		if (incoming_frame_buffer[i] == 0xFF)
+		if (data_incoming_frame_buffer[i] == 0xFF)
 			has_error = 1;
 	}
 
@@ -205,7 +205,7 @@ int check_info_confirmation_frame() {
 }
 
 int receive_frame() {
-	int response = receive_msg_through_socket(incoming_frame_buffer, pdu_size);
+	int response = receive_msg_through_socket(data_incoming_frame_buffer, pdu_size);
 	return response;
 }
 
@@ -223,12 +223,12 @@ void get_frame_from_sender() {
 }
 
 void pack_message_from_queue_buffer() {
-	*((long long *) outcoming_frame_buffer) = outcoming_frame_id++;
+	*((long long *) data_outcoming_frame_buffer) = outcoming_frame_id++;
 	for (int i = 0; i < pdu_size - PDU_HEADER_SIZE; i++)
-		outcoming_frame_buffer[i + PDU_HEADER_SIZE] = queue_buffer[queue_buffer_index++];
+		data_outcoming_frame_buffer[i + PDU_HEADER_SIZE] = queue_buffer[queue_buffer_index++];
 }
 
 void unpack_message_from_frame_buffer() {
 	for (int i = 0; i < pdu_size - PDU_HEADER_SIZE; i++)
-		queue_buffer[queue_buffer_index++] = incoming_frame_buffer[i + PDU_HEADER_SIZE];
+		queue_buffer[queue_buffer_index++] = data_incoming_frame_buffer[i + PDU_HEADER_SIZE];
 }
