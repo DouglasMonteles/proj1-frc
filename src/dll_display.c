@@ -13,152 +13,139 @@
 #include <sys/types.h>
 #include <sys/time.h>
 
-static mqd_t up_queue;
-static mqd_t down_queue;
-static mqd_t sending_session_token_queue;
+static mqd_t receiver_queue;
+static mqd_t sender_queue;
+static mqd_t session_token_queue;
 
-static struct mq_attr up_queue_properties;
-static struct mq_attr down_queue_properties;
-static struct mq_attr sending_session_token_queue_properties;
+static struct mq_attr receiver_queue_props;
+static struct mq_attr sender_queue_props;
+static struct mq_attr sending_session_token_queue_props;
 
 static pid_t dll_pid;
 
-static char * up_queue_name = "/up_queue";
-static char * down_queue_name = "/down_queue";
-static char * sending_session_token_queue_name = "/sending_session_token_queue";
+static char* receiver_queue_name = "/receiver_queue";
+static char* sender_queue_name = "/sender_queue";
+static char* session_token_queue_name = "/session_token_queue";
 
 static struct timespec timeout;
 
-void initialize_dll_interface(long nano_timeout)
-{
-    up_queue_properties.mq_maxmsg = CQ_MAX_DATA_AMOUNT;
-    up_queue_properties.mq_msgsize = CQ_DATA_MAX_LEN;
+void build_queue(struct mq_attr queue_props, mqd_t queue, char *queue_name) {
+	queue_props.mq_maxmsg = MSG_MAX_AMOUNT;
+	queue_props.mq_msgsize = MSG_MAX_SIZE;
 
-    up_queue = mq_open(
-        up_queue_name,
-        O_CREAT | O_RDWR,
-        S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH,
-        &up_queue_properties
-    );
+	queue = mq_open(
+		queue_name,
+		O_CREAT | O_RDWR,
+		S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH,
+		&queue_props
+	);
 
-    if (up_queue < 0) {
-        printf("An error occurred at up_queue creation\n");
-        printf("Error: %s\n", strerror(errno));
-        exit(1);
-    }
-
-    down_queue_properties.mq_maxmsg = CQ_MAX_DATA_AMOUNT;
-    down_queue_properties.mq_msgsize = CQ_DATA_MAX_LEN;
-
-    down_queue = mq_open(
-        down_queue_name,
-        O_CREAT | O_RDWR,
-        S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH,
-        &down_queue_properties
-    );
-
-    if (down_queue < 0) {
-        printf("An error occurred at down_queue creation\n");
-        printf("Error: %s\n", strerror(errno));
-        exit(1);
-    }
-
-    timeout.tv_sec = 0;
-    timeout.tv_nsec = nano_timeout;
+	if (queue < 0) {
+		printf("An error occurred at queue creation\n");
+		printf("Error: %s\n", strerror(errno));
+		exit(1);
+	}
 }
 
-void shut_down_dll_interface()
-{
-    mq_close(down_queue);
-    mq_close(up_queue);
-    mq_unlink(down_queue_name);
-    mq_unlink(up_queue_name);
+void initialize_dll_interface(long v_timeout) {
+	// build_queue(receiver_queue_props, receiver_queue, receiver_queue_name);
+	// build_queue(sender_queue_props, sender_queue, sender_queue_name);
+	receiver_queue_props.mq_maxmsg = MSG_MAX_AMOUNT;
+	receiver_queue_props.mq_msgsize = MSG_MAX_SIZE;
+
+	receiver_queue = mq_open(
+		receiver_queue_name,
+		O_CREAT | O_RDWR,
+		S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH,
+		&receiver_queue_props
+	);
+
+	if (receiver_queue < 0) {
+		printf("An error occurred at receiver_queue creation\n");
+		printf("Error: %s\n", strerror(errno));
+		exit(1);
+	}
+
+	sender_queue_props.mq_maxmsg = MSG_MAX_AMOUNT;
+	sender_queue_props.mq_msgsize = MSG_MAX_SIZE;
+
+	sender_queue = mq_open(
+		sender_queue_name,
+		O_CREAT | O_RDWR,
+		S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH,
+		&sender_queue_props
+	);
+
+	if (sender_queue < 0) {
+		printf("An error occurred at sender_queue creation\n");
+		printf("Error: %s\n", strerror(errno));
+		exit(1);
+	}
+
+	timeout.tv_sec = 0;
+	timeout.tv_nsec = v_timeout;
 }
 
-// void request_sending_session()
-// {
-//     int priority;
-//     printf("indo pedir\n");
-//     int bytes_received = mq_receive(sending_session_token_queue, (char *) &dll_pid, sizeof(pid_t), &priority);
-//     if (bytes_received < 0) {
-//         printf("An error occurred when receiving dll pid from sending session queue\n");
-//         printf("Error: %s\n", strerror(errno));
-
-//         return;
-//     }
-//     printf("Terminei, estou matando o pid: %d\n", dll_pid);
-//     kill(dll_pid, SIGUSR1);
-// }
-
-// void finish_sending_session()
-// {
-//     kill(dll_pid, SIGUSR2);
-// }
-
-// void seed_dll_token(pid_t token)
-// {
-//     if (mq_send(sending_session_token_queue, (char *) &token, sizeof(pid_t), 0) < 0) {
-//         printf("An error occurred when seeding token into session queue\n");
-//         printf("Error: %s\n", strerror(errno));
-//     }
-// }
-
-void send_data_to_dll(char * data, int data_len)
-{
-    if (mq_send(down_queue, data, data_len, 0) < 0) {
-        printf("An error occurred when sending data to dll\n");
-        printf("Error: %s\n", strerror(errno));
-    }
+void shut_down_dll_interface() {
+	mq_close(sender_queue);
+	mq_close(receiver_queue);
+	mq_unlink(sender_queue_name);
+	mq_unlink(receiver_queue_name);
 }
 
-int get_timed_data_from_dll(char * data, int * data_len)
-{
+void send_data_to_dll(char * data, int data_len) {
+	if (mq_send(sender_queue, data, data_len, 0) < 0) {
+		printf("An error occurred when sending data to dll\n");
+		printf("Error: %s\n", strerror(errno));
+	}
+}
+
+int get_timed_data_from_dll(char * data, int * data_len) {
     int priority;
-    int bytes_received = mq_timedreceive(up_queue, data, CQ_DATA_MAX_LEN, &priority, &timeout);
-    if (bytes_received < 0) {
-        if (errno == ETIMEDOUT)
-            return CQ_TIMEOUT;
+    int bytes_received = mq_timedreceive(receiver_queue, data, MSG_MAX_SIZE, &priority, &timeout);
+    
+		if (bytes_received < 0) {
+			if (errno == ETIMEDOUT)
+				return MSG_TIMEOUT;
 
-        printf("An error occurred when receiving data from dll\n");
-        printf("Error: %s\n", strerror(errno));
+			printf("An error occurred when receiving data from dll\n");
+			printf("Error: %s\n", strerror(errno));
 
-        return errno;
+			return errno;
     }
+
     return 0;
 }
 
-void get_data_from_dll(char * data, int * data_len)
-{
-    int priority;
-    int bytes_received = mq_receive(up_queue, data, CQ_DATA_MAX_LEN, &priority);
+void get_data_from_dll(char * data, int * data_len) {
+	int priority;
+	int bytes_received = mq_receive(receiver_queue, data, MSG_MAX_SIZE, &priority);
 }
 
-void send_data_to_app(char * data, int data_len)
-{
-    if (mq_send(up_queue, data, data_len, 0) < 0) {
-        printf("An error occurred when sending data to app\n");
-        printf("Error: %s\n", strerror(errno));
-    }
+void send_data_to_app(char * data, int data_len) {
+	if (mq_send(receiver_queue, data, data_len, 0) < 0) {
+		printf("An error occurred when sending data to app\n");
+		printf("Error: %s\n", strerror(errno));
+	}
 }
 
-int get_timed_data_from_app(char * data, int * data_len)
-{
-    int priority;
-    int bytes_received = mq_timedreceive(down_queue, data, CQ_DATA_MAX_LEN, &priority, &timeout);
-    if (bytes_received < 0) {
-        if (errno == ETIMEDOUT)
-            return CQ_TIMEOUT;
+int get_timed_data_from_app(char * data, int * data_len) {
+	int priority;
+	int bytes_received = mq_timedreceive(sender_queue, data, MSG_MAX_SIZE, &priority, &timeout);
+	if (bytes_received < 0) {
+		if (errno == ETIMEDOUT)
+			return MSG_TIMEOUT;
 
-        printf("An error occurred when receiving data from app\n");
-        printf("Error: %s\n", strerror(errno));
+		printf("An error occurred when receiving data from app\n");
+		printf("Error: %s\n", strerror(errno));
 
-        return errno;
-    }
-    return 0;
+		return errno;
+	}
+
+	return 0;
 }
 
-void get_data_from_app(char * data, int * data_len)
-{
-    int priority;
-    int bytes_received = mq_receive(down_queue, data, CQ_DATA_MAX_LEN, &priority);
+void get_data_from_app(char * data, int * data_len) {
+	int priority;
+	int bytes_received = mq_receive(sender_queue, data, MSG_MAX_SIZE, &priority);
 }

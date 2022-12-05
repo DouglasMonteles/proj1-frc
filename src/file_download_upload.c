@@ -30,9 +30,9 @@ void process_menu()
 {
     scanf(" %s", cmd);
     if (cmd[0] == '1')
-        mode = SEND_FILE;
+        mode = OPC_SEND_FILE;
     else if (cmd[0] == '2')
-        mode = RECEIVE_FILE;
+        mode = OPC_RECEIVE_FILE;
     else if (cmd[0] == '3')
         app_running = 0;
 }
@@ -54,7 +54,7 @@ void process_send_file()
 
     printf("\033[0;33mDigite algo para continuar\033[0m.\n");
     scanf(" %s", cmd);
-    mode = MENU;
+    mode = OPC_MENU;
 }
 
 void display_receive_file()
@@ -68,7 +68,7 @@ void process_receive_file()
     printf("\033[0;32mArquivo recebido!\033[0m\n");
     printf("\033[0;33mDigite algo para continuar\033[0m.\n");
     scanf(" %s", cmd);
-    mode = MENU;
+    mode = OPC_MENU;
 }
 
 void run_app()
@@ -77,17 +77,17 @@ void run_app()
         display_app_header();
 
         switch (mode) {
-        case MENU:
+        case OPC_MENU:
             display_menu();
             process_menu();
             break;
 
-        case SEND_FILE:
+        case OPC_SEND_FILE:
             display_send_file();
             process_send_file();
             break;
 
-        case RECEIVE_FILE:
+        case OPC_RECEIVE_FILE:
             display_receive_file();
             process_receive_file();
             break;
@@ -111,7 +111,7 @@ int process_file(char *file_path)
 
     if (fp == NULL) {
         printf("Erro: %s\n", strerror(errno));
-        mode = MENU;
+        mode = OPC_MENU;
         return 1;
     }
 
@@ -122,23 +122,23 @@ int process_file(char *file_path)
 
     rewind(fp);
 
-    char chunk[CQ_DATA_MAX_LEN];
+    char chunk[MSG_MAX_SIZE];
 
     int bytes_read;
     int bytes_sent = 0;
     long long int packages_sent = 0;
 
-    while (bytes_read = fread(chunk + CQ_HEADER_LEN, sizeof(char), CQ_MESSAGE_LEN, fp)) {
+    while (bytes_read = fread(chunk + MSG_HEADER_SIZE, sizeof(char), MSG_SIZE, fp)) {
         *((int *)chunk) = bytes_read;
 
-        send_data_to_dll(chunk, CQ_DATA_MAX_LEN);
+        send_data_to_dll(chunk, MSG_MAX_SIZE);
         bytes_sent += bytes_read;
         packages_sent++;
         if (packages_sent % 100 == 0)
             printf("\t\t\033[0;34mUpload:\033[0m %dB/ %dB\n", bytes_sent, file_size);
     }
-    memset(chunk, 0x0, CQ_DATA_MAX_LEN);
-    send_data_to_dll(chunk, CQ_DATA_MAX_LEN);
+    memset(chunk, 0x0, MSG_MAX_SIZE);
+    send_data_to_dll(chunk, MSG_MAX_SIZE);
 
     fclose(fp);
 
@@ -158,7 +158,7 @@ void mount_file()
     FILE *fp;
     fp = fopen(filename, "w");
 
-    char chunk_data[CQ_DATA_MAX_LEN];
+    char chunk_data[MSG_MAX_SIZE];
 
     while(1) {
         get_data_from_dll(chunk_data, &chunk_len);
@@ -169,7 +169,7 @@ void mount_file()
 
         bytes_received += useful_msg_len;
 
-        for (int i = CQ_HEADER_LEN; i < CQ_HEADER_LEN + useful_msg_len; i++) {
+        for (int i = MSG_HEADER_SIZE; i < MSG_HEADER_SIZE + useful_msg_len; i++) {
             fputc(chunk_data[i], fp);
         }
         if (bytes_received % 100 == 0)

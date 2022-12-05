@@ -11,9 +11,9 @@
 
 static int operation_mode;
 
-static const int QUEUE_BUFFER_SIZE = CQ_DATA_MAX_LEN;
+static const int QUEUE_BUFFER_SIZE = MSG_MAX_SIZE;
 static int queue_buffer_pos = 0;
-static char queue_buffer[CQ_DATA_MAX_LEN];
+static char queue_buffer[MSG_MAX_SIZE];
 
 static int pdu_size;
 
@@ -33,20 +33,20 @@ static int dll_is_running = 1;
 
 void initialize_dll(char * host_port, char * receiver_address, char * receiver_port, int t_pdu_size, int t_verbose)
 {
-    initialize_socket(host_port, receiver_address, receiver_port, MICRO_TIMEOUT);
+    init_socket(host_port, receiver_address, receiver_port, MICRO_TIMEOUT);
     initialize_dll_interface(NANO_TIMEOUT);
 
-    pdu_size = CQ_DATA_MAX_LEN + PDU_HEADER_SIZE;
-    for (int i = 2; i < CQ_DATA_MAX_LEN; i++) {
-        if (CQ_DATA_MAX_LEN % i != 0)
+    pdu_size = MSG_MAX_SIZE + PDU_HEADER_SIZE;
+    for (int i = 2; i < MSG_MAX_SIZE; i++) {
+        if (MSG_MAX_SIZE % i != 0)
             continue;
 
         if (abs((i + PDU_HEADER_SIZE) - t_pdu_size) < abs((pdu_size + PDU_HEADER_SIZE) - t_pdu_size))
             pdu_size = i + PDU_HEADER_SIZE;
     }
 
-    if (CQ_DATA_MAX_LEN % (pdu_size - PDU_HEADER_SIZE) != 0) {
-        printf("%sCritical error: queue message size (%d) can't be divided by PDU payload size (%d).\n", dll_error_msg_format, CQ_DATA_MAX_LEN, pdu_size - PDU_HEADER_SIZE);
+    if (MSG_MAX_SIZE % (pdu_size - PDU_HEADER_SIZE) != 0) {
+        printf("%sCritical error: queue message size (%d) can't be divided by PDU payload size (%d).\n", dll_error_msg_format, MSG_MAX_SIZE, pdu_size - PDU_HEADER_SIZE);
         printf("%sInsert a different PDU size.\n", dll_warning_msg_format);
         exit(1);
     }
@@ -65,8 +65,8 @@ void initialize_dll(char * host_port, char * receiver_address, char * receiver_p
     }
 
     verbose = t_verbose;
-    operation_mode = RECEIVER;
-    printf("%sData Link Layer initialized as %s successfully with PID %d!\n", dll_success_msg_format, operation_mode == SENDER ? "SENDER" : "RECEIVER", getpid());
+    operation_mode = ID_RECEIVER;
+    printf("%sData Link Layer initialized as %s successfully with PID %d!\n", dll_success_msg_format, operation_mode == ID_SENDER ? "ID_SENDER" : "ID_RECEIVER", getpid());
 
     if (verbose)
         printf("%sInitialized in VERBOSE mode!\n", dll_info_msg_format);
@@ -81,34 +81,34 @@ void shut_down_dll()
     free(outcoming_frame_buffer);
 
     shut_down_dll_interface();
-    shut_down_socket();
+    destroy_socket();
 }
 
 void run_dll()
 {
     while (dll_is_running) {
-        if (operation_mode == SENDER) {
-            if (get_data_from_queue() == CQ_TIMEOUT) {
+        if (operation_mode == ID_SENDER) {
+            if (get_data_from_queue() == MSG_TIMEOUT) {
                 // Ninguem enviou nada via fila, checar socket
-                operation_mode = RECEIVER;
+                operation_mode = ID_RECEIVER;
                 continue;
             }
             send_data();
         }
 
-        if (operation_mode == RECEIVER) {
+        if (operation_mode == ID_RECEIVER) {
             while (queue_buffer_pos < QUEUE_BUFFER_SIZE - 1) {
                 int frame_status;
                 while (frame_status = receive_frame()) {
-                    if (frame_status == SC_TIMEOUT) {
+                    if (frame_status == SOCKET_TIMEOUT) {
                         // Ninguem enviou nada no socket, checar fila
-                        operation_mode = SENDER;
+                        operation_mode = ID_SENDER;
                         break;
                     }
                     printf("%sFailed to receive frame %lld. Trying again...\n", dll_error_msg_format, incoming_frame_id);
                 }
 
-                if (operation_mode == SENDER)
+                if (operation_mode == ID_SENDER)
                     break;
 
                 get_frame_from_sender();
@@ -116,7 +116,7 @@ void run_dll()
             }
             queue_buffer_pos = 0;
 
-            if (operation_mode == RECEIVER)
+            if (operation_mode == ID_RECEIVER)
                 send_data_to_queue();
         }
     }
@@ -129,7 +129,7 @@ void set_verbose_dll(int value)
 
 void set_operation_mode(int value)
 {
-    if (value != RECEIVER && value != SENDER) {
+    if (value != ID_RECEIVER && value != ID_SENDER) {
         printf("%sAttempt to set operation mode with invalid value: %d.\n", dll_error_msg_format, value);
         return;
     }
@@ -137,7 +137,7 @@ void set_operation_mode(int value)
     operation_mode = value;
 
     if (verbose)
-        printf("%sNow operating as %s.\n", dll_info_msg_format, operation_mode == RECEIVER ? "RECEIVER" : "SENDER");
+        printf("%sNow operating as %s.\n", dll_info_msg_format, operation_mode == ID_RECEIVER ? "ID_RECEIVER" : "ID_SENDER");
 }
 
 int get_data_from_queue()
@@ -222,7 +222,7 @@ void send_frame_to_receiver()
 
 int send_frame()
 {
-    return send_data_through_socket(outcoming_frame_buffer, pdu_size);
+    return send_msg_through_socket(outcoming_frame_buffer, pdu_size);
 }
 
 int get_confirmation_frame()
@@ -245,7 +245,7 @@ int check_confirmation_frame()
 
 int receive_frame()
 {
-    int result = receive_data_through_socket(incoming_frame_buffer, pdu_size);
+    int result = receive_msg_through_socket(incoming_frame_buffer, pdu_size);
     return result;
 }
 
