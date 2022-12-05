@@ -31,7 +31,7 @@ static const char * dll_info_msg_format = "(DLL) \033[0;34mINFO:\033[0m ";
 static int verbose = 0;
 static int dll_is_running = 1;
 
-void initialize_dll(char * host_port, char * receiver_address, char * receiver_port, int t_pdu_size, int t_verbose)
+void init_dll_process(char * host_port, char * receiver_address, char * receiver_port, int flag_pdu_size)
 {
     init_socket(host_port, receiver_address, receiver_port, MICRO_TIMEOUT);
     initialize_dll_interface(NANO_TIMEOUT);
@@ -41,7 +41,7 @@ void initialize_dll(char * host_port, char * receiver_address, char * receiver_p
         if (MSG_MAX_SIZE % i != 0)
             continue;
 
-        if (abs((i + PDU_HEADER_SIZE) - t_pdu_size) < abs((pdu_size + PDU_HEADER_SIZE) - t_pdu_size))
+        if (abs((i + PDU_HEADER_SIZE) - flag_pdu_size) < abs((pdu_size + PDU_HEADER_SIZE) - flag_pdu_size))
             pdu_size = i + PDU_HEADER_SIZE;
     }
 
@@ -51,7 +51,7 @@ void initialize_dll(char * host_port, char * receiver_address, char * receiver_p
         exit(1);
     }
 
-    if (pdu_size != t_pdu_size)
+    if (pdu_size != flag_pdu_size)
         printf("%sPDU size was adjusted to %d to avoid inconsistency problems.\n", dll_warning_msg_format, pdu_size);
 
     if ((incoming_frame_buffer = malloc((size_t) pdu_size)) == NULL) {
@@ -64,18 +64,17 @@ void initialize_dll(char * host_port, char * receiver_address, char * receiver_p
         exit(1);
     }
 
-    verbose = t_verbose;
     operation_mode = ID_RECEIVER;
     printf("%sData Link Layer initialized as %s successfully with PID %d!\n", dll_success_msg_format, operation_mode == ID_SENDER ? "ID_SENDER" : "ID_RECEIVER", getpid());
 
     if (verbose)
         printf("%sInitialized in VERBOSE mode!\n", dll_info_msg_format);
 
-    run_dll();
-    shut_down_dll();
+    execute_dll_process();
+    destroy_dll_process();
 }
 
-void shut_down_dll()
+void destroy_dll_process()
 {
     free(incoming_frame_buffer);
     free(outcoming_frame_buffer);
@@ -84,16 +83,16 @@ void shut_down_dll()
     destroy_socket();
 }
 
-void run_dll()
+void execute_dll_process()
 {
     while (dll_is_running) {
         if (operation_mode == ID_SENDER) {
-            if (get_data_from_queue() == MSG_TIMEOUT) {
+            if (get_msg_data_from_queue() == MSG_TIMEOUT) {
                 // Ninguem enviou nada via fila, checar socket
                 operation_mode = ID_RECEIVER;
                 continue;
             }
-            send_data();
+            send_msg_data();
         }
 
         if (operation_mode == ID_RECEIVER) {
@@ -117,7 +116,7 @@ void run_dll()
             queue_buffer_pos = 0;
 
             if (operation_mode == ID_RECEIVER)
-                send_data_to_queue();
+                send_msg_data_to_queue();
         }
     }
 }
@@ -127,7 +126,7 @@ void set_verbose_dll(int value)
     verbose = value;
 }
 
-void set_operation_mode(int value)
+void define_op_mode(int value)
 {
     if (value != ID_RECEIVER && value != ID_SENDER) {
         printf("%sAttempt to set operation mode with invalid value: %d.\n", dll_error_msg_format, value);
@@ -140,18 +139,18 @@ void set_operation_mode(int value)
         printf("%sNow operating as %s.\n", dll_info_msg_format, operation_mode == ID_RECEIVER ? "ID_RECEIVER" : "ID_SENDER");
 }
 
-int get_data_from_queue()
+int get_msg_data_from_queue()
 {
     int nothing;
     return get_timed_data_from_app(queue_buffer, &nothing);
 }
 
-void send_data_to_queue()
+void send_msg_data_to_queue()
 {
     send_data_to_app(queue_buffer, QUEUE_BUFFER_SIZE);
 }
 
-int check_incoming_frame()
+int verify_incoming_frame()
 {
     long long received_id = *((long long *)incoming_frame_buffer);
     if (received_id != incoming_frame_id) {
@@ -166,26 +165,26 @@ int check_incoming_frame()
     return 0;
 }
 
-int send_error_confirmation_frame()
+int send_status_error_confirmation_frame()
 {
     memset(outcoming_frame_buffer, 0xFF, pdu_size);
     return send_frame();
 }
 
-int send_ok_confirmation_frame()
+int send_success_confirmation_frame()
 {
     memset(outcoming_frame_buffer, 0x0, pdu_size);
     return send_frame();
 }
 
-void send_data()
+void send_msg_data()
 {
     if (verbose)
         printf("%sSending data from queue.\n", dll_info_msg_format);
 
     while (queue_buffer_pos < QUEUE_BUFFER_SIZE - 1) {
         pack_message_from_queue_buffer();
-        send_frame_to_receiver();
+        send_frame_msg_to_receiver();
     }
     queue_buffer_pos = 0;
 
@@ -193,7 +192,7 @@ void send_data()
         printf("%sData from queue sent successfully.\n\n", dll_info_msg_format);
 }
 
-void send_frame_to_receiver()
+void send_frame_msg_to_receiver()
 {
     int attempts = 0;
     while (1) {
@@ -204,7 +203,7 @@ void send_frame_to_receiver()
             printf("%sFailed to send frame %lld. Trying again...\n", dll_error_msg_format, outcoming_frame_id);
         }
 
-        while (get_confirmation_frame() && attempts <= 3) {
+        while (get_info_confirmation_frame() && attempts <= 3) {
             printf("%sFailed to receive confirmation frame. Trying again...\n", dll_error_msg_format);
             attempts++;
         }
@@ -213,7 +212,7 @@ void send_frame_to_receiver()
             attempts = 0;
             continue;
         }
-        if (check_confirmation_frame())
+        if (check_info_confirmation_frame())
             continue;
 
         break;
@@ -225,12 +224,12 @@ int send_frame()
     return send_msg_through_socket(outcoming_frame_buffer, pdu_size);
 }
 
-int get_confirmation_frame()
+int get_info_confirmation_frame()
 {
     receive_frame();
 }
 
-int check_confirmation_frame()
+int check_info_confirmation_frame()
 {
     int is_error = 0;
     for (int i = 0; i < pdu_size; i++) {
@@ -254,12 +253,12 @@ void get_frame_from_sender()
     if (verbose)
         printf("%sReceiving frame %lld.\n", dll_info_msg_format, incoming_frame_id);
 
-    if (check_incoming_frame())
-        while (send_error_confirmation_frame())
+    if (verify_incoming_frame())
+        while (send_status_error_confirmation_frame())
             printf("%sFailed to send ERROR confirmation frame. Trying again...\n", dll_error_msg_format);
 
     else
-        while (send_ok_confirmation_frame())
+        while (send_success_confirmation_frame())
             printf("%sFailed to send OK confirmation frame. Trying again...\n", dll_error_msg_format);
 }
 

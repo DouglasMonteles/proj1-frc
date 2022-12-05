@@ -20,7 +20,7 @@ int main(int argc, char** argv) {
 			int argi = 5;
 			int pdu_size = 100;
 			
-			initialize_dll(argv[2], argv[3], argv[4], pdu_size, 9);
+			init_dll_process(argv[2], argv[3], argv[4], pdu_size);
 	}
 	
 	return 0;
