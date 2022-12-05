@@ -12,13 +12,13 @@ LINKFLAGS := -lrt
 SRCFILES := $(wildcard src/*.c)
 
 all: $(SRCFILES:src/%.c=obj/%.o)
-	$(CC) $(CFLAGS) obj/*.o -o bin/prog $(LINKFLAGS)
+	$(CC) $(CFLAGS) obj/*.o -o bin/projeto-1 $(LINKFLAGS)
 
 obj/%.o: src/%.c
 	$(CC) $(CFLAGS) -c $< -o $@ -I./inc $(LINKFLAGS)
 
-run: bin/prog
-	bin/prog
+run: bin/projeto-1
+	bin/projeto-1
 
 .PHONY: clean
 clean:
