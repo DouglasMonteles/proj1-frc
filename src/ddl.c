@@ -42,7 +42,7 @@ void init_dll_process(char* port, char* receiver_host, char* receiver_port, int 
 	}
 
 	if (pdu_size != flag_pdu_size)
-		printf("[Aviso]: O tamanho da PDU foi ajustado para [%d] para evitar problemas de inconsistencia.\n", pdu_size);
+		printf("[Aviso]: O tamanho da PDU foi ajustado, pois o calculo da PDU retornou [%d] como valor para evitar problemas de inconsistencia.\n", pdu_size);
 
 	if ((data_incoming_frame_buffer = malloc((size_t) pdu_size)) == NULL) {
 		printf("[Erro]: Nao foi possivel alocar memoria para o buffer.\n");
