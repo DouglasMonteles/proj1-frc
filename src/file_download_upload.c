@@ -8,173 +8,152 @@
 #include <string.h>
 #include <sys/time.h>
 
-static int mode;
-static char cmd[250];
-static int app_running = 1;
+#define MAX 300
 
-void display_app_header()
-{
-    system("tput reset");
-    printf("------------------------- \033[0;32mgamaTorrent\033[0m -----------------------------------\n");
-    printf("\t\tCompartilhe seus arquivos com qualquer um sem que a policia federal bata na sua porta!\n\n");
+int selected_option;
+char commands[MAX];
+int is_app_running = 1;
+
+void options_menu() {
+	printf("\nEnvie e receba arquivos sem precisar ir Catar com vários Pendrives\n\n");
+	printf("--------------- MENU --------------\n");
+	printf("[1] - Enviar seus arquivos\n");
+	printf("[2] - Receber arquivos\n");
+	printf("[3] - Finalizar a aplicação\n");
+	printf("---------------------------------\n\n");
+
+	scanf(" %s", commands);
+
+	switch (commands[0]) 	{
+		case '1':
+			selected_option = OPC_SEND_FILE;
+			break;
+
+		case '2':
+			selected_option = OPC_RECEIVE_FILE;
+			break;
+
+		case '3':
+			is_app_running = 0;
+			break;
+		
+		default:
+			break;
+	}	
 }
 
-void display_menu()
-{
-    printf("\t\t\t- Para enviar arquivos, digite 1\n");
-    printf("\t\t\t- Para receber arquivos, digite 2\n");
-    printf("\t\t\t- Para sair, digite 3\n");
+void init_send_files() {
+	printf("Informe o nome do arquivo a ser enviado. Ex: teste.txt\n");
+	scanf(" %s", commands);
+	if (upload_file(commands) == 0)
+		printf("Seu arquivo <%s> foi enviado!\n", commands);
+	else
+		printf("Erro ao enviar arquivo <%s>\n", commands);
+
+	// printf("\033[0;33mDigite algo para continuar\033[0m.\n");
+	// scanf(" %s", commands);
+	selected_option = OPC_MENU;
 }
 
-void process_menu()
-{
-    scanf(" %s", cmd);
-    if (cmd[0] == '1')
-        mode = OPC_SEND_FILE;
-    else if (cmd[0] == '2')
-        mode = OPC_RECEIVE_FILE;
-    else if (cmd[0] == '3')
-        app_running = 0;
+void init_receive_files() {
+	download_file();
+	printf("Arquivo foi recebido com sucesso!\n");
+	// printf("\033[0;33mDigite algo para continuar\033[0m.\n");
+	// scanf(" %s", commands);
+	selected_option = OPC_MENU;
 }
 
-void display_send_file()
-{
-    printf("\t\tPasta atual:\n");
-    system("ls");
-    printf("\n\n\t\tDigite o caminho do arquivo a ser enviado: ");
+void init_process() {
+	while (is_app_running) {
+		switch (selected_option) 		{
+		case OPC_MENU:
+			options_menu();
+			break;
+
+		case OPC_SEND_FILE:
+			init_send_files();
+			break;
+
+		case OPC_RECEIVE_FILE:
+			init_receive_files();
+			break;
+
+		default:
+			break;
+		}
+	}
 }
 
-void process_send_file()
-{
-    scanf(" %s", cmd);
-    if (process_file(cmd) == 0)
-        printf("\033[0;32mArquivo enviado!\033[0m\n");
-    else
-        printf("\033[0;31mOcorreu um erro durante o envio do arquivo\033[0m\n");
+int upload_file(char *file_name) {
+	FILE *file;
+	file = fopen(file_name, "r");
 
-    printf("\033[0;33mDigite algo para continuar\033[0m.\n");
-    scanf(" %s", cmd);
-    mode = OPC_MENU;
+	if (file == NULL) {
+		printf("Ocorreu um erro: %s\n", strerror(errno));
+		selected_option = OPC_MENU;
+		return 1;
+	}
+
+	int file_size_in_bytes = 0;
+
+	fseek(file, 0L, SEEK_END);
+	file_size_in_bytes = ftell(file);
+
+	rewind(file);
+
+	char msg_data_chunks[MSG_MAX_SIZE];
+
+	int bytes_read;
+	int bytes_sended = 0;
+	long long int packages_sended = 0;
+
+	while (bytes_read = fread(msg_data_chunks + MSG_HEADER_SIZE, sizeof(char), MSG_SIZE, file))	{
+		*((int *)msg_data_chunks) = bytes_read;
+
+		send_data_to_dll(msg_data_chunks, MSG_MAX_SIZE);
+		bytes_sended += bytes_read;
+		packages_sended++;
+		if (packages_sended % 100 == 0)
+			printf("Upload em andamento: [%d / %d]\n", bytes_sended, file_size_in_bytes);
+	}
+
+	memset(msg_data_chunks, 0x0, MSG_MAX_SIZE);
+	send_data_to_dll(msg_data_chunks, MSG_MAX_SIZE);
+
+	fclose(file);
+	return 0;
 }
 
-void display_receive_file()
-{
-    printf("\t\tVocê será notificado assim que alguém estiver lhe enviando um arquivo.\n");
-}
+void download_file() {
+	char file_name[MAX];
 
-void process_receive_file()
-{
-    mount_file();
-    printf("\033[0;32mArquivo recebido!\033[0m\n");
-    printf("\033[0;33mDigite algo para continuar\033[0m.\n");
-    scanf(" %s", cmd);
-    mode = OPC_MENU;
-}
+	int msg_data_chunk_len;
+	int msg_bytes_received = 0;
 
-void run_app()
-{
-    while (app_running) {
-        display_app_header();
+	printf("Informe o nome do arquivo que será recebido:\n");
+	scanf(" %s", file_name);
 
-        switch (mode) {
-        case OPC_MENU:
-            display_menu();
-            process_menu();
-            break;
+	FILE *file;
+	file = fopen(file_name, "w");
 
-        case OPC_SEND_FILE:
-            display_send_file();
-            process_send_file();
-            break;
+	char msg_chunk_data[MSG_MAX_SIZE];
 
-        case OPC_RECEIVE_FILE:
-            display_receive_file();
-            process_receive_file();
-            break;
+	while (1)	{
+		get_data_from_dll(msg_chunk_data, &msg_data_chunk_len);
 
-        default:
-            break;
-        }
-    }
-}
+		int useful_msg_len = *((int *)msg_chunk_data);
+		if (useful_msg_len == 0)
+			break;
 
-void show_chunk(char * chunk, int chunk_len)
-{
-    for (int i = 0; i < chunk_len; i++)
-        printf("%c", chunk[i]);
-}
+		msg_bytes_received += useful_msg_len;
 
-int process_file(char *file_path)
-{
-    FILE *fp;
-    fp = fopen(file_path, "r");
+		for (int i = MSG_HEADER_SIZE; i < MSG_HEADER_SIZE + useful_msg_len; i++) {
+			fputc(msg_chunk_data[i], file);
+		}
+		
+		if (msg_bytes_received % 100 == 0)
+			printf("Fazendo o download: [%d] bytes\n", msg_bytes_received);
+	}
 
-    if (fp == NULL) {
-        printf("Erro: %s\n", strerror(errno));
-        mode = OPC_MENU;
-        return 1;
-    }
-
-    int file_size = 0;
-
-    fseek(fp, 0L, SEEK_END);
-    file_size = ftell(fp);
-
-    rewind(fp);
-
-    char chunk[MSG_MAX_SIZE];
-
-    int bytes_read;
-    int bytes_sent = 0;
-    long long int packages_sent = 0;
-
-    while (bytes_read = fread(chunk + MSG_HEADER_SIZE, sizeof(char), MSG_SIZE, fp)) {
-        *((int *)chunk) = bytes_read;
-
-        send_data_to_dll(chunk, MSG_MAX_SIZE);
-        bytes_sent += bytes_read;
-        packages_sent++;
-        if (packages_sent % 100 == 0)
-            printf("\t\t\033[0;34mUpload:\033[0m %dB/ %dB\n", bytes_sent, file_size);
-    }
-    memset(chunk, 0x0, MSG_MAX_SIZE);
-    send_data_to_dll(chunk, MSG_MAX_SIZE);
-
-    fclose(fp);
-
-    return 0;
-}
-
-void mount_file()
-{
-    char filename[255];
-
-    int chunk_len;
-    int bytes_received = 0;
-
-    printf("\t\tDigite o nome do arquivo a ser salvo.\n");
-    scanf(" %s", filename);
-
-    FILE *fp;
-    fp = fopen(filename, "w");
-
-    char chunk_data[MSG_MAX_SIZE];
-
-    while(1) {
-        get_data_from_dll(chunk_data, &chunk_len);
-
-        int useful_msg_len = *((int *)chunk_data);
-        if (useful_msg_len == 0)
-            break;
-
-        bytes_received += useful_msg_len;
-
-        for (int i = MSG_HEADER_SIZE; i < MSG_HEADER_SIZE + useful_msg_len; i++) {
-            fputc(chunk_data[i], fp);
-        }
-        if (bytes_received % 100 == 0)
-            printf("\t\t\033[0;34mDownload:\033[0m %dB\n", bytes_received);
-    }
-
-    fclose(fp);
+	fclose(file);
 }

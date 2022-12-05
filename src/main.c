@@ -12,7 +12,7 @@ int main(int argc, char** argv) {
 		case 1:
 		case 2:
 			initialize_dll_interface(NANO_TIMEOUT);
-			run_app();
+			init_process();
 			shut_down_dll_interface();
 		break;
 
