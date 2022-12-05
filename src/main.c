@@ -8,6 +8,8 @@
 #include <stdlib.h>
 
 int main(int argc, char** argv) {
+	int pdu_size = 112;
+
 	switch (argc) {
 		case 1:
 		case 2:
@@ -17,8 +19,6 @@ int main(int argc, char** argv) {
 		break;
 
 		default:
-			int pdu_size = 100;
-			
 			if (argv[5]) {
 				pdu_size = atoi(argv[5]);
 			}
