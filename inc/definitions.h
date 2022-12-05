@@ -1,3 +1,6 @@
+#ifndef _DEFINITIONS_H_
+#define _DEFINITIONS_H_
+
 #define MSG_HEADER_SIZE 4
 #define MSG_SIZE 100
 #define MSG_MAX_SIZE (MSG_HEADER_SIZE + MSG_SIZE)
@@ -16,3 +19,5 @@
 #define OPC_RECEIVE_FILE 2
 
 #define SOCKET_TIMEOUT 5
+
+#endif

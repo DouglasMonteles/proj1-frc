@@ -1,3 +1,6 @@
+#ifndef _DLL_DISPLAY_H_
+#define _DLL_DISPLAY_H_
+
 void init_ddl_display_process(long n_timeout);
 void destroy_dll_display();
 
@@ -9,3 +12,5 @@ int get_timed_data_msg_from_instance(char* msg, int * size);
 
 void get_data_msg_from_dll(char* msg, int * size);
 void get_data_msg_from_instance(char* msg, int * size);
+
+#endif

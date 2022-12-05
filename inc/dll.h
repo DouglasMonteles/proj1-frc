@@ -1,3 +1,6 @@
+#ifndef _DLL_H_
+#define _DLL_H_
+
 void init_dll_process(char *port, char *receiver_host, char *receiver_port, int flag_pdu_size);
 void destroy_dll_process();
 void execute_dll_process();
@@ -17,3 +20,5 @@ int receive_frame();
 void get_frame_from_sender();
 void pack_message_from_queue_buffer();
 void unpack_message_from_frame_buffer();
+
+#endif
